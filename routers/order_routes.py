@@ -1,5 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 from db.session import SessionLocal
 from models.Order import Order
@@ -29,13 +30,100 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     db.refresh(db_order)
     return db_order
 
-@router.get("/", response_model=list[OrderSchema])
-def read_orders(db: Session = Depends(get_db)):
-    return db.query(Order).options(joinedload(Order.items)).all()
+@router.get("/all", tags=["orders"])
+def read_all_orders_admin(db: Session = Depends(get_db)):
+    """
+    Admin/Seller view: See ALL orders with User details and Items.
+    """
+    query = text("""
+        SELECT 
+            o.id as order_id,
+            o.order_date,
+            o.total_amount,
+            o.status,
+            u.username,
+            u.phone,
+            u.address,
+            oi.product_id,
+            oi.quantity,
+            oi.price as item_price,
+            p.name as product_name,
+            p.image_url
+        FROM orders o
+        JOIN users u ON o.user_id = u.id
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN products p ON oi.product_id = p.id
+        ORDER BY o.order_date DESC
+    """)
+    results = db.execute(query).fetchall()
+    
+    # Grouping logic to nest items under orders
+    orders_map = {}
+    for row in results:
+        if row.order_id not in orders_map:
+            orders_map[row.order_id] = {
+                "order_id": row.order_id,
+                "order_date": row.order_date,
+                "total_amount": row.total_amount,
+                "status": row.status,
+                "username": row.username,
+                "phone": row.phone,
+                "address": row.address,
+                "items": []
+            }
+        orders_map[row.order_id]["items"].append({
+            "product_id": row.product_id,
+            "product_name": row.product_name,
+            "quantity": row.quantity,
+            "price": row.item_price,
+            "image_url": row.image_url
+        })
+    
+    return list(orders_map.values())
 
-@router.get("get/{user_id}")
-def get_orders_by_user(user_id: int, db: Session = Depends(get_db)):
-    return db.query(Order).options(joinedload(Order.items)).filter(Order.user_id == user_id).all()
+@router.get("/my_orders/{user_id}", tags=["orders"])
+def get_my_orders(user_id: int, db: Session = Depends(get_db)):
+    """
+    Buyer view: See only their own orders.
+    """
+    query = text("""
+        SELECT 
+            o.id as order_id,
+            o.order_date,
+            o.total_amount,
+            o.status,
+            oi.product_id,
+            oi.quantity,
+            oi.price as item_price,
+            p.name as product_name,
+            p.image_url
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN products p ON oi.product_id = p.id
+        WHERE o.user_id = :user_id
+        ORDER BY o.order_date DESC
+    """)
+    results = db.execute(query, {"user_id": user_id}).fetchall()
+    
+    orders_map = {}
+    for row in results:
+        if row.order_id not in orders_map:
+            orders_map[row.order_id] = {
+                "order_id": row.order_id,
+                "order_date": row.order_date,
+                "total_amount": row.total_amount,
+                "status": row.status,
+                "items": []
+            }
+        orders_map[row.order_id]["items"].append({
+            "product_id": row.product_id,
+            "product_name": row.product_name,
+            "quantity": row.quantity,
+            "price": row.item_price,
+            "image_url": row.image_url
+        })
+        
+    return list(orders_map.values())
 
 @router.delete("delete/{user_id}")
 def delete_orders_by_user(user_id: int, db: Session = Depends(get_db)):
