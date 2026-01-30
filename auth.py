@@ -12,7 +12,7 @@ from dependencies import get_db
 from models.User import User
 
 # OAuth2 scheme for token authentication
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 
 # Secret key for JWT - In production, use environment variable
 SECRET_KEY = "ulavan_planet_secret_key_change_in_production_2026"
